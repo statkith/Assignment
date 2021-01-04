@@ -1,0 +1,302 @@
+---
+title: "New_Final_independant_Assignment"
+author: "kithsiri Jayakody"
+date: "12/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Section 1: Research question
+
+This dataset has given  44 columns with 23 categorical variables and 21 numeric variables.
+
+1.	Does the questionnaire  measure a single construct     Or is it possible that there are multiple aspects which is used to measure the overall average score of the professional evaluation G_SC. ( this PCA is doing to reduce the dymensions to predict the G_SC.)
+
+In order to pre process the dataset following aspects are done as below.
+
+Section 2:
+
+1. Loading the dataset.
+2. Select the required variables to apply principal compoenent analysis.
+3. removed the null value columns
+4. convert the liker scale type variables to interger numbers
+5. convert categorical columns to one-hot encoding type variables
+6. check for value misssingness
+7. correct the value missingness
+8. graphically look at the datasets few boxplots
+
+
+```{r}
+# loading the required files
+
+needed_packages <- c("psych",  "REdaS", "Hmisc", "corrplot", "ggcorrplot", "factoextra",  "nFactors","readxl","dplyr", "dummy","data.table","mltools","caret")                      
+# Extract not installed packages
+not_installed <- needed_packages[!(needed_packages %in% installed.packages()[ , "Package"])]    
+# Install not installed packages
+if(length(not_installed)) install.packages(not_installed, repos = "http://cran.us.r-project.org") 
+library(psych)
+library(REdaS)
+library(Hmisc)
+library(corrplot)
+library(ggcorrplot)
+library(factoextra)#Used for principal component analysis to get a different view of eigenvalues
+library(nFactors)
+library(readxl)
+library(dplyr)
+library(dummy)
+
+library(data.table)
+library(mltools)
+
+```
+
+
+loading the datafile for analytics
+
+```{r}
+
+#load the dataset and remove every row when students didn't answer a question
+
+setwd('D:/statistics')
+# dataset is loading 
+df <- read_excel("data_academic_performance.xlsx")
+str(df)
+
+```
+
+removing unnecessary files from the dataset
+
+```{r}
+
+#View(df)
+
+# removing the unwanted columns from the system
+
+
+df1 <-df[,-c(1,10,31)]
+
+#View(df1)
+
+
+```
+
+
+converting the categorical values to factors
+
+```{r}
+# convert the categorical variables to numeric with one hot encoding. with out converting to numerics we are unable to perform principle compoenent analysis 
+# with categorical variables.
+#View(df2)
+
+#Convert the character types to factor variables types
+indices <- c(1:23,29,30)
+
+for(i in indices)
+{
+  df1[[i]] <- as.factor(df1[[i]])
+}
+
+```
+
+
+setting the G_sc as the last column
+
+```{r}
+# setting the G_Sc column as the last column
+
+df1<- df1 %>% select(-G_SC,G_SC)
+#View(df1)
+
+```
+
+converting categorical values to one hot encoding
+
+```{r}
+newdata <- one_hot(as.data.table(df1))
+ncol(newdata)
+```
+```{r}
+newdata[-c(G_SC)]
+```
+
+
+
+checking for missing values. it suggests that there are no such missing values.
+
+```{r}
+# Checking for missing values
+any(is.na(newdata))
+sum(is.na(newdata))
+```
+
+
+checking for corelation
+
+```{r}
+#create a correlation matrix (these are just some methods)
+raqMatrix<-cor(newdata)
+
+```
+
+checking values suits for G_SC prediction. as there are 3936 variables ( after the one hot encoding) following charts illustrates the frequency distribution of the 
+variables according to the corelation values.
+
+
+```{r}
+tds <- data.frame(model.matrix( ~ .- 1, data=newdata)) 
+cor_tds <- cor(tds, tds, method = "pearson")
+cor_df<- data.frame(cor=cor_tds[1:3936,3937], varn = names(cor_tds[1:3936,3937])) 
+cor_df<- cor_df%>%mutate(cor_abs = abs(cor)) %>% arrange(desc(cor_abs))
+plot(cor_df$cor_abs, type="l")
+```
+filtering the corelation variables where the values is greater than >.2
+
+
+```{r}
+list_varn <- cor_df %>% filter(cor_abs>0.3)
+filter_df <- data.frame(tds) %>% select(G_SC,one_of(as.character(list_varn$varn)))
+head(filter_df)
+library(corrgram)
+corrgram(filter_df,lower.panel=panel.cor,upper.panel=panel.pie, cor.method = "pearson")
+
+```
+
+Check if data is suitable - look at the relevant Statistics
+Bartlett's test
+
+```{r}
+
+raqMatrix<-cor(filter_df)
+psych::cortest.bartlett(filter_df)
+psych::cortest.bartlett(raqMatrix, n=nrow(filter_df))
+```
+
+As the p value is less than <.05, this is significant with bartlett.
+
+```{r}
+View(filter_df)
+```
+
+
+
+```{r}
+
+
+psych::KMO(filter_df)
+
+
+```
+According to here as the kiser value is .5 we can proceed with the rest of the analysis.
+
+```{r}
+# checking for determinents
+
+###Determinant
+#Determinant (execute one of these):
+det(raqMatrix)
+det(cor(raqMatrix))
+
+
+
+```
+as indicated with this figure determinent value is higher than .00001.  so there represent multicollinearity.
+
+
+performing dimensionality reduction
+
+```{r}
+#pcModel<-principal(dataframe/R-matrix, nfactors = number of factors, rotate = "method of rotation", scores = TRUE)
+
+#On raw data using principal components analysis
+#For PCA we know how many factors if is possible to find
+#principal will work out our loadings of each variable onto each component, the proportion 
+#each component explained and the cumulative proportion of variance explained 
+pc1 <-  principal(filter_df, nfactors = 15, rotate = "none")
+pc1 <-  principal(filter_df, nfactors = length(filter_df), rotate = "none")
+pc1#output all details of the PCA
+
+```
+
+significance of the filters
+
+```{r}
+
+xv <- filter_df %>% select(-G_SC)
+pca = prcomp(xv, scale. = T, center = T)
+plot(pca, type="l")
+```
+print the significance value
+
+```{r}
+
+
+#Create the scree plot
+plot(pc1$values, type = "b") 
+#Print the variance explained by each component
+pc1$Vaccounted 
+#Print the Eigenvalues
+View(pc1$values)
+
+
+
+```
+total evaluation
+
+```{r}
+pcf=princomp(filter_df)
+factoextra::get_eigenvalue(pcf)
+factoextra::fviz_eig(pcf, addlabels = TRUE, ylim = c(0, 50))#Visualize the Eigenvalues
+factoextra::fviz_pca_var(pcf, col.var = "black")
+factoextra::fviz_pca_var(pcf, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+             )
+
+#Print the loadings above the level of 0.3
+psych::print.psych(pc1, cut = 0.3, sort = TRUE)
+#create a diagram showing the components and how the manifest variables load
+fa.diagram(pc1) 
+#Show the loadings of variables on to components
+fa.sort(pc1$loading)
+#Output the communalities of variables across components (will be one for PCA since all the variance is used)
+pc1$communality 
+#Visualize contribution of variables to each component
+var <- factoextra::get_pca_var(pcf)
+corrplot::corrplot(var$contrib, is.corr=FALSE) 
+
+# Contributions of variables to PC1
+factoextra::fviz_contrib(pcf, choice = "var", axes = 1, top = 10)
+# Contributions of variables to PC2
+factoextra::fviz_contrib(pcf, choice = "var", axes = 2, top = 10)
+# Contributions of variables to PC3
+factoextra::fviz_contrib(pcf, choice = "var", axes = 3, top = 10)
+# Contributions of variables to PC4
+factoextra::fviz_contrib(pcf, choice = "var", axes = 4, top = 10)
+# Contributions of variables to PC5
+factoextra::fviz_contrib(pcf, choice = "var", axes = 5, top = 10)
+# Contributions of variables to PC6
+factoextra::fviz_contrib(pcf, choice = "var", axes = 6, top = 10)
+# Contributions of variables to PC7
+factoextra::fviz_contrib(pcf, choice = "var", axes = 7, top = 10)
+# Contributions of variables to PC8
+factoextra::fviz_contrib(pcf, choice = "var", axes = 8, top = 10)
+```
+
+do factor rotation 
+
+```{r}
+#Apply rotation to try to refine the component structure
+pc2 <-  principal(filter_df, nfactors = 15, rotate = "varimax")#Extracting 4 factors
+#output the components
+psych::print.psych(pc2, cut = 0.3, sort = TRUE)
+#output the communalities
+pc2$communality
+#NOTE: you can do all the other things done for the model created in pc1
+
+```
+
